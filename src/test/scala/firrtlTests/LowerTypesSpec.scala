@@ -18,14 +18,16 @@ import firrtl.util.TestOptions
 class LowerTypesSpec extends FirrtlFlatSpec {
   private val compiler = new TransformManager(Seq(Dependency(LowerTypes)))
 
-  private def executeTest(input: String, expected: Seq[String]) = {
+  private def executeTest(input: String, expected: Seq[String]): Unit = executeTest(input, expected, List())
+  private def executeTest(input: String, expected: Seq[String], annos: AnnotationSeq): AnnotationSeq = {
     val fir = Parser.parse(input.split("\n").toIterator)
-    val c = compiler.runTransform(CircuitState(fir, Seq())).circuit
-    val lines = c.serialize.split("\n").map(normalized)
+    val state = compiler.runTransform(CircuitState(fir, annos))
+    val lines = state.circuit.serialize.split("\n").map(normalized)
 
     expected.foreach { e =>
       lines should contain(e)
     }
+    state.annotations
   }
 
   behavior.of("Lower Types")
@@ -165,8 +167,12 @@ class LowerTypesSpec extends FirrtlFlatSpec {
         |    node y = mod.d[0]
      """.stripMargin
     val expected = Seq("mod.a_b <= x", "mod.a_c <= x", "node y = mod.d_0").map(normalized)
+    val modTarget = CircuitTarget("Test").module("Test").instOf("mod", "Other")
+    val annosIn = List(DummyAnnotation(modTarget.ref("a")))
+    val annosExpected = List(DummyAnnotation(modTarget.ref("a_b")), DummyAnnotation(modTarget.ref("a_c")))
 
-    executeTest(input, expected)
+    val annosOut = executeTest(input, expected, annosIn).toList
+    annosOut should be (annosExpected)
   }
 
   it should "lower aggregate memories" in {
@@ -228,6 +234,33 @@ class LowerTypesSpec extends FirrtlFlatSpec {
 
     executeTest(input, expected)
   }
+
+  it should "lower ports of ext modules" in {
+    val input =
+      """circuit Test :
+        |  extmodule Other :
+        |    input a : { b : UInt<1>, c : UInt<1>}
+        |    output d : UInt<1>[2]
+        |    defname = haha
+        |  module Test :
+        |    input x : UInt<1>
+        |    inst mod of Other
+        |    mod.a.b <= x
+        |    mod.a.c <= x
+        |    node y = mod.d[0]
+     """.stripMargin
+    val expected = Seq("mod.a_b <= x", "mod.a_c <= x", "node y = mod.d_0").map(normalized)
+    val modTarget = CircuitTarget("Test").module("Test").instOf("mod", "Other")
+    val annosIn = List(DummyAnnotation(modTarget.ref("a")))
+    val annosExpected = List(DummyAnnotation(modTarget.ref("a_b")), DummyAnnotation(modTarget.ref("a_c")))
+
+    val annosOut = executeTest(input, expected, annosIn).toList
+    annosOut should be (annosExpected)
+  }
+}
+
+case class DummyAnnotation(target: Target) extends SingleTargetAnnotation[Target] {
+  override def duplicate(n: Target) = copy(n)
 }
 
 /** Uniquify used to be its own pass. We ported the tests to run with the combined LowerTypes pass. */
