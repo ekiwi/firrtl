@@ -192,6 +192,23 @@ private case class ArrayConstant(e: BVExpr, indexWidth: Int) extends ArrayExpr {
   override def children:  List[SMTExpr] = List(e)
 }
 
+private object BVAnd {
+  def apply(a: BVExpr, b: BVExpr): BVOp = BVOp(Op.And, a, b)
+  def apply(exprs: Iterable[BVExpr]): BVExpr = {
+    assert(exprs.nonEmpty, "Don't know what to do with an empty list!")
+    val nonTriviallyTrue = exprs.filterNot(_ == True())
+    if(nonTriviallyTrue.isEmpty) { True() } else { nonTriviallyTrue.reduce(apply) }
+  }
+}
+private object BVOr {
+  def apply(a: BVExpr, b: BVExpr): BVOp = BVOp(Op.Or, a, b)
+  def apply(exprs: Iterable[BVExpr]): BVExpr = {
+    assert(exprs.nonEmpty, "Don't know what to do with an empty list!")
+    val nonTriviallyFalse = exprs.filterNot(_ == False())
+    if(nonTriviallyFalse.isEmpty) { False() } else { nonTriviallyFalse.reduce(apply) }
+  }
+}
+
 private object SMTEqual {
   def apply(a: SMTExpr, b: SMTExpr): BVExpr = (a, b) match {
     case (ab: BVExpr, bb: BVExpr) => BVEqual(ab, bb)
@@ -205,6 +222,20 @@ private object SMTExpr {
     case b: BVExpr    => s"bv<${b.width}>"
     case a: ArrayExpr => s"bv<${a.indexWidth}> -> bv<${a.dataWidth}>"
   }
+}
+
+// unapply for matching BVLiteral(1, 1)
+private object True  {
+  private val _True = BVLiteral(1, 1)
+  def apply(): BVLiteral = _True
+  def unapply(l: BVLiteral): Boolean = l.value == 1 && l.width == 1
+}
+
+// unapply for matching BVLiteral(0, 1)
+private object False {
+  private val _False = BVLiteral(0, 1)
+  def apply(): BVLiteral = _False
+  def unapply(l: BVLiteral): Boolean = l.value == 0 && l.width == 1
 }
 
 // Raw SMTLib encoded expressions as an escape hatch used in the [[SMTTransitionSystemEncoder]]
